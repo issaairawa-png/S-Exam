@@ -1731,6 +1731,29 @@
             
             localStorage.setItem('mcqResults', JSON.stringify(resultsList));
 
+            // إرسال النتيجة إلى Google Sheets
+            try {
+                const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyh2ROz6o3KppPXE2ldaLYOvP3i4-F6PMlyHFxhIIPhA3Gtd5d-1udqaSoTiIdftI8/exec";
+                const sheetData = {
+                    studentName: appData.student.name,
+                    grade:       appData.student.class,
+                    field:       appData.student.field,
+                    section:     appData.student.section,
+                    subject:     appData.exam.subject,
+                    score:       earned,
+                    total:       total,
+                    percentage:  ((earned / total) * 100).toFixed(1)
+                };
+                fetch(APPS_SCRIPT_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(sheetData)
+                }).catch(err => console.warn("Google Sheets send error:", err));
+            } catch (e) {
+                console.warn("Google Sheets send error:", e);
+            }
+
             // Show Success Screen
             const successTeacher = document.getElementById('success-teacher-name');
             successTeacher.textContent = appData.exam.teacherName || '---';
