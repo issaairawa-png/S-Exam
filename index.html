@@ -143,7 +143,12 @@
         }
         @media print {
             @page { size: auto; margin: 10mm; }
-            body { background: white !important; font-size: 12pt; }
+            body { 
+                background: white !important; 
+                font-size: 12pt; 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
             .no-print, .dashboard-actions, button { display: none !important; }
             .dashboard-result { padding: 0 !important; background: white !important; display: block !important; }
             .dashboard-card { 
@@ -918,11 +923,16 @@
     <!-- Review Screen -->
     <div id="review-screen" class="hidden min-h-screen py-8 px-4">
         <div class="max-w-4xl mx-auto">
-            <div class="flex justify-between items-center mb-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                 <h1 id="review-screen-title" class="text-2xl font-bold text-indigo-700">مراجعة إجاباتك</h1>
-                <button id="review-back-btn" onclick="goBackFromReview()" class="bg-white border text-gray-600 px-4 py-2 rounded-xl flex items-center shadow-sm">
-                    <i data-feather="arrow-right" class="ml-2"></i> العودة للنتائج
-                </button>
+                <div class="flex gap-2 w-full sm:w-auto no-print">
+                    <button onclick="printCompactReview()" class="flex-1 sm:flex-none bg-green-600 text-white px-4 py-2 rounded-xl flex items-center justify-center shadow-sm hover:bg-green-700 transition-all">
+                        <i data-feather="printer" class="ml-2 w-5 h-5"></i> طباعة المراجعة
+                    </button>
+                    <button id="review-back-btn" onclick="goBackFromReview()" class="flex-1 sm:flex-none bg-white border text-gray-600 px-4 py-2 rounded-xl flex items-center justify-center shadow-sm hover:bg-gray-50 transition-all">
+                        <i data-feather="arrow-right" class="ml-2 w-5 h-5"></i> العودة للنتائج
+                    </button>
+                </div>
             </div>
             <div id="review-questions-container" class="space-y-6"></div>
         </div>
@@ -1916,6 +1926,19 @@
 
             if (typeof feather !== 'undefined') feather.replace();
             window._reviewSource = 'results-screen';
+            
+            // تخزين البيانات لغايات طباعة المراجعة المدمجة
+            window._currentReviewData = {
+                studentName: appData.student.name,
+                studentClass: appData.student.class,
+                studentSection: appData.student.section,
+                examTitle: appData.exam.title,
+                subject: appData.exam.subject,
+                date: new Date().toISOString(),
+                questions: appData.exam.questions,
+                studentAnswers: appData.student.answers
+            };
+
             document.getElementById('review-screen-title').textContent = 'مراجعة إجاباتك';
             showScreen('review-screen');
         }
@@ -2056,8 +2079,172 @@
 
             if (typeof feather !== 'undefined') feather.replace();
             window._reviewSource = 'results-manager-screen';
+            window._currentReviewData = result; // تخزين البيانات لغايات الطباعة المدمجة
             document.getElementById('review-screen-title').textContent = `مراجعة إجابات: ${result.studentName}`;
             showScreen('review-screen');
+        }
+
+        // طباعة المراجعة بشكل مدمج (كتابة السؤال كامل وإجابة الطالب)
+        function printCompactReview() {
+            const data = window._currentReviewData;
+            if (!data) return showToast('بيانات المراجعة غير متوفرة', 'error');
+
+            const totalQ = data.questions.length;
+            const LABELS = ['أ', 'ب', 'ج', 'د'];
+            const examDate = new Date(data.date).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+            let itemsHTML = '<div class="review-grid">';
+            for (let i = 0; i < totalQ; i++) {
+                const q = data.questions[i];
+                const studentAns = data.studentAnswers[i];
+                const isCorrect = studentAns === q.correctAnswer;
+                
+                const questionText = (!q.text || q.text === '---') ? 'سؤال مصوّر (يرجى مراجعة الشاشة)' : q.text;
+                
+                let studentAnsText = '- لم يُجب -';
+                if (studentAns > 0 && studentAns <= 4) {
+                    studentAnsText = q.options[studentAns - 1];
+                    if (!studentAnsText || studentAnsText === '---') studentAnsText = `الخيار ${LABELS[studentAns - 1]}`;
+                }
+
+                let correctAnsText = q.options[q.correctAnswer - 1];
+                if (!correctAnsText || correctAnsText === '---') correctAnsText = `الخيار ${LABELS[q.correctAnswer - 1]}`;
+
+                const icon = isCorrect ? '✓' : '✗';
+                const iconColor = isCorrect ? '#16a34a' : '#dc2626';
+                const bgColor = isCorrect ? '#f0fdf4' : '#fef2f2';
+                const borderColor = isCorrect ? '#bbf7d0' : '#fecaca';
+
+                itemsHTML += `
+                    <div class="q-item" style="background:${bgColor}; border-color:${borderColor};">
+                        <div class="q-num">${i + 1}</div>
+                        <div class="q-content">
+                            <div class="q-text">${questionText}</div>
+                            <div class="q-ans-row">
+                                <span class="q-ans-label">إجابتك:</span>
+                                <span class="q-ans-text" style="color:${iconColor}">${studentAnsText}</span>
+                                <span class="q-icon" style="color:${iconColor}">${icon}</span>
+                            </div>
+                            ${!isCorrect ? `
+                            <div class="q-ans-row" style="margin-top: 4px; background: rgba(22, 163, 74, 0.1);">
+                                <span class="q-ans-label" style="color:#16a34a">الصحيحة:</span>
+                                <span class="q-ans-text" style="color:#16a34a">${correctAnsText}</span>
+                                <span class="q-icon" style="color:#16a34a">✓</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            itemsHTML += '</div>';
+
+            const printHTML = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>مراجعة إجابات - ${data.studentName}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        @page { size: A4 portrait; margin: 10mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Tajawal', sans-serif; direction: rtl; width: 100%; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: 2px solid #1e3a5f;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .header h1 { font-size: 18px; color: #1e3a5f; font-weight: 900; margin-bottom: 4px; }
+        .student-info { font-size: 13px; color: #475569; display: flex; gap: 15px; font-weight: 700; }
+        
+        .review-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .q-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 10px;
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .q-num {
+            background: #1e3a5f;
+            color: white;
+            font-size: 11px;
+            font-weight: 900;
+            padding: 2px 6px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .q-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .q-text {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+        .q-ans-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            flex-wrap: wrap;
+            background: rgba(255,255,255,0.6);
+            padding: 4px 6px;
+            border-radius: 6px;
+        }
+        .q-ans-label {
+            color: #64748b;
+            font-weight: 700;
+            font-size: 10px;
+        }
+        .q-ans-text {
+            font-weight: 800;
+            flex: 1;
+            word-break: break-word;
+        }
+        .q-icon {
+            font-size: 16px;
+            font-weight: 900;
+            line-height: 1;
+        }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="header">
+        <div>
+            <h1>مراجعة إجابات: ${data.examTitle}</h1>
+            <div class="student-info">
+                <span>الطالب: ${data.studentName}</span>
+                <span>الصف: ${data.studentClass} ${data.studentSection ? ' - ' + data.studentSection : ''}</span>
+            </div>
+        </div>
+        <div style="font-size: 12px; color: #64748b; font-weight: 700; text-align: left;">
+            <div>التاريخ: ${examDate}</div>
+            <div>${data.subject}</div>
+        </div>
+    </div>
+    
+    ${itemsHTML}
+</body>
+</html>`;
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(printHTML);
+            printWindow.document.close();
         }
 
         function goBackFromReview() {
