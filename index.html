@@ -919,8 +919,8 @@
     <div id="review-screen" class="hidden min-h-screen py-8 px-4">
         <div class="max-w-4xl mx-auto">
             <div class="flex justify-between items-center mb-8">
-                <h1 class="text-2xl font-bold text-indigo-700">مراجعة إجاباتك</h1>
-                <button onclick="showScreen('results-screen')" class="bg-white border text-gray-600 px-4 py-2 rounded-xl flex items-center shadow-sm">
+                <h1 id="review-screen-title" class="text-2xl font-bold text-indigo-700">مراجعة إجاباتك</h1>
+                <button id="review-back-btn" onclick="goBackFromReview()" class="bg-white border text-gray-600 px-4 py-2 rounded-xl flex items-center shadow-sm">
                     <i data-feather="arrow-right" class="ml-2"></i> العودة للنتائج
                 </button>
             </div>
@@ -1701,6 +1701,28 @@
             list.forEach(r => recs.innerHTML += `<li><span class="rec-dot"></span>${r}</li>`);
 
             // Save to LocalStorage
+            // حفظ بيانات الأسئلة والإجابات لمراجعتها لاحقاً
+            const savedQuestions = appData.exam.questions.map(q => {
+                const lightQ = {
+                    text: q.text,
+                    options: q.options,
+                    correctAnswer: q.correctAnswer,
+                    score: q.score,
+                    dir: q.dir
+                };
+                if (q.images) {
+                    lightQ.images = {};
+                    if (q.images.question) lightQ.images.question = q.images.question;
+                    for (let k = 1; k <= 4; k++) {
+                        if (q.images['option' + k]) lightQ.images['option' + k] = q.images['option' + k];
+                    }
+                }
+                if (q.sharedFigure) {
+                    lightQ.sharedFigure = { name: q.sharedFigure.name, image: q.sharedFigure.image };
+                }
+                return lightQ;
+            });
+
             const resultData = {
                 studentName: appData.student.name,
                 studentClass: appData.student.class,
@@ -1712,7 +1734,11 @@
                 date: new Date().toISOString(),
                 examTitle: appData.exam.title,
                 subject: appData.exam.subject,
-                status: 'مكتمل'
+                status: 'مكتمل',
+                schoolName: appData.exam.schoolName || '',
+                teacherName: appData.exam.teacherName || '',
+                questions: savedQuestions,
+                studentAnswers: [...appData.student.answers]
             };
             
             let resultsList = JSON.parse(localStorage.getItem('mcqResults')) || [];
@@ -1889,6 +1915,8 @@
             });
 
             if (typeof feather !== 'undefined') feather.replace();
+            window._reviewSource = 'results-screen';
+            document.getElementById('review-screen-title').textContent = 'مراجعة إجاباتك';
             showScreen('review-screen');
         }
 
@@ -1909,6 +1937,455 @@
                             `تم التقييم عبر منصة الاختبارات المدرسية`;
             
             window.open(`https://wa.me/?text=${message}`, '_blank');
+        }
+
+        // مراجعة إجابات طالب من النتائج السابقة المحفوظة
+        function reviewSavedAnswers(dateId) {
+            const results = JSON.parse(localStorage.getItem('mcqResults')) || [];
+            const result = results.find(r => r.date === dateId);
+            if (!result || !result.questions || !result.studentAnswers) {
+                return showToast('بيانات المراجعة غير متوفرة لهذا الطالب', 'warning');
+            }
+
+            const container = document.getElementById('review-questions-container');
+            container.innerHTML = '';
+
+            // إضافة شريط معلومات الطالب
+            container.innerHTML += `
+                <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 mb-4 flex flex-wrap gap-4 items-center">
+                    <div class="flex items-center gap-2">
+                        <i data-feather="user" class="w-5 h-5 text-indigo-600"></i>
+                        <span class="font-bold text-indigo-800">${result.studentName}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i data-feather="book" class="w-5 h-5 text-indigo-600"></i>
+                        <span class="font-bold text-indigo-800">${result.studentClass} / ${result.studentField} / ${result.studentSection}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i data-feather="file-text" class="w-5 h-5 text-indigo-600"></i>
+                        <span class="font-bold text-indigo-800">${result.examTitle}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i data-feather="award" class="w-5 h-5 text-indigo-600"></i>
+                        <span class="font-bold text-indigo-800">${result.score} / ${result.totalScore}</span>
+                    </div>
+                </div>
+            `;
+
+            result.questions.forEach((q, i) => {
+                const isLTR = q.dir === 'ltr';
+                const currentLabels = isLTR ? ['A', 'B', 'C', 'D'] : OPTION_LABELS;
+                const studentAnswer = result.studentAnswers[i];
+                const correct = studentAnswer === q.correctAnswer;
+
+                const hasQuestionImg = q.images && q.images.question;
+                const isImageQuestion = !q.text || q.text === '---';
+
+                let opts = '';
+                q.options.forEach((opt, idx) => {
+                    const isCorrect = idx + 1 === q.correctAnswer;
+                    const isSelected = idx + 1 === studentAnswer;
+                    const optionImg = q.images && (q.images['option' + (idx + 1)] || null);
+
+                    opts += `
+                        <div dir="${isLTR ? 'ltr' : 'rtl'}" class="p-3 border rounded-xl flex flex-col gap-3 items-start ${isCorrect ? 'bg-green-50 border-green-200' : isSelected ? 'bg-red-50 border-red-200' : 'bg-gray-50'}">
+                            <div class="flex justify-between items-start w-full">
+                                <span class="font-medium text-gray-800">${currentLabels[idx]}. ${opt === '---' ? '' : opt}</span>
+                                <div>
+                                    ${isCorrect ? '<i data-feather="check" class="text-green-600 w-5 h-5"></i>' : isSelected ? '<i data-feather="x" class="text-red-600 w-5 h-5"></i>' : ''}
+                                </div>
+                            </div>
+                            ${optionImg ? `<img src="${optionImg}" class="w-full max-h-32 object-contain rounded-lg border border-gray-300" alt="صورة الخيار ${currentLabels[idx]}">` : ''}
+                        </div>
+                    `;
+                });
+
+                if (isImageQuestion && hasQuestionImg) {
+                    container.innerHTML += `
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-gray-800">السؤال ${i+1}</h3>
+                                <span class="text-sm font-bold ${correct ? 'text-green-600' : 'text-red-600'}">${correct ? 'إجابة صحيحة ✓' : 'إجابة خاطئة ✗'}</span>
+                            </div>
+                            <div class="mb-6">
+                                <img src="${q.images.question}" class="w-full max-h-64 object-contain rounded-lg border-2 border-blue-200 shadow-md" alt="صورة السؤال">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">${opts}</div>
+                        </div>
+                    `;
+                } else {
+                    let sharedFigHtml = '';
+                    if (q.sharedFigure) {
+                        sharedFigHtml = `
+                            <div class="mb-6 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
+                                <p class="text-indigo-600 font-bold mb-3 text-xs flex items-center gap-2">
+                                    <i data-feather="image" class="w-3 h-3"></i> رسـم مشترك مرتبط: ${q.sharedFigure.name || 'بدون عنوان'}
+                                </p>
+                                <img src="${q.sharedFigure.image}" class="max-h-48 mx-auto rounded-lg shadow-sm border" alt="الرسم المشترك">
+                            </div>
+                        `;
+                    }
+
+                    container.innerHTML += `
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            ${sharedFigHtml}
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-gray-800 mb-2">السؤال ${i+1}</h3>
+                                    <p class="text-gray-700 mb-2">${q.text}</p>
+                                    ${hasQuestionImg ? `<img src="${q.images.question}" class="max-h-40 object-contain rounded-lg border border-gray-300 mt-3 mb-4">` : ''}
+                                </div>
+                                <span class="text-sm font-bold ${correct ? 'text-green-600 whitespace-nowrap ml-4' : 'text-red-600 whitespace-nowrap ml-4'}">${correct ? 'صحيحة ✓' : 'خاطئة ✗'}</span>
+                            </div>
+                            <div class="space-y-2">${opts}</div>
+                        </div>
+                    `;
+                }
+            });
+
+            // Render Math in Review Screen
+            if (typeof renderMathInElement !== 'undefined') {
+                renderMathInElement(container, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            }
+
+            if (typeof feather !== 'undefined') feather.replace();
+            window._reviewSource = 'results-manager-screen';
+            document.getElementById('review-screen-title').textContent = `مراجعة إجابات: ${result.studentName}`;
+            showScreen('review-screen');
+        }
+
+        function goBackFromReview() {
+            const source = window._reviewSource || 'results-screen';
+            if (source === 'results-manager-screen') {
+                // إعادة تحميل بيانات الجدول
+                allResults = JSON.parse(localStorage.getItem('mcqResults')) || [];
+                allResults.sort((a, b) => new Date(b.date) - new Date(a.date));
+                renderResultsTable(allResults);
+            }
+            showScreen(source);
+        }
+
+        // طباعة شهادة نتيجة الطالب مع جدول الإجابات
+        function printStudentCertificate(dateId) {
+            const results = JSON.parse(localStorage.getItem('mcqResults')) || [];
+            const result = results.find(r => r.date === dateId);
+            if (!result || !result.questions || !result.studentAnswers) {
+                return showToast('بيانات الطباعة غير متوفرة لهذا الطالب', 'warning');
+            }
+
+            const percent = Math.round((result.score / result.totalScore) * 100);
+            let grade, gradeColor;
+            if (percent >= 90) { grade = 'ممتاز'; gradeColor = '#16a34a'; }
+            else if (percent >= 80) { grade = 'جيد جداً'; gradeColor = '#65a30d'; }
+            else if (percent >= 70) { grade = 'جيد'; gradeColor = '#ca8a04'; }
+            else if (percent >= 50) { grade = 'مقبول'; gradeColor = '#ea580c'; }
+            else { grade = 'ضعيف'; gradeColor = '#dc2626'; }
+
+            const correct = result.questions.filter((q, i) => result.studentAnswers[i] === q.correctAnswer).length;
+            const wrong = result.questions.length - correct;
+            const examDate = new Date(result.date).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+            const LABELS = ['أ', 'ب', 'ج', 'د'];
+
+            // بناء صفوف جدول الإجابات
+            let tableRows = '';
+            result.questions.forEach((q, i) => {
+                const studentAns = result.studentAnswers[i];
+                const isCorrect = studentAns === q.correctAnswer;
+                const studentLabel = studentAns > 0 && studentAns <= 4 ? LABELS[studentAns - 1] : '-';
+                const correctLabel = LABELS[q.correctAnswer - 1];
+                const icon = isCorrect ? '✓' : '✗';
+                const iconColor = isCorrect ? '#16a34a' : '#dc2626';
+                const bgColor = isCorrect ? '#f0fdf4' : '#fef2f2';
+                const questionText = (!q.text || q.text === '---') ? 'سؤال مصوّر' : q.text.substring(0, 55) + (q.text.length > 55 ? '...' : '');
+
+                tableRows += `
+                    <tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
+                        <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:center;font-weight:700;color:#4338ca;width:35px">${i + 1}</td>
+                        <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${questionText}</td>
+                        <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:center;font-weight:700;width:50px">${studentLabel}</td>
+                        <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:center;font-weight:700;color:#16a34a;width:50px">${correctLabel}</td>
+                        <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:center;width:40px;background:${bgColor}">
+                            <span style="font-size:16px;font-weight:900;color:${iconColor}">${icon}</span>
+                        </td>
+                    </tr>`;
+            });
+
+            // حساب عدد الأعمدة المطلوبة لتقسيم الجدول
+            const totalQ = result.questions.length;
+            let columns = 1;
+            if (totalQ > 20) columns = 3;
+            else if (totalQ > 10) columns = 2;
+
+            const perColumn = Math.ceil(totalQ / columns);
+            let multiColHTML = '';
+
+            for (let c = 0; c < columns; c++) {
+                const startIdx = c * perColumn;
+                const endIdx = Math.min(startIdx + perColumn, totalQ);
+                let colRows = '';
+                for (let i = startIdx; i < endIdx; i++) {
+                    const q = result.questions[i];
+                    const studentAns = result.studentAnswers[i];
+                    const isCorrect = studentAns === q.correctAnswer;
+                    const studentLabel = studentAns > 0 && studentAns <= 4 ? LABELS[studentAns - 1] : '-';
+                    const correctLabel = LABELS[q.correctAnswer - 1];
+                    const icon = isCorrect ? '✓' : '✗';
+                    const iconColor = isCorrect ? '#16a34a' : '#dc2626';
+                    const bgColor = isCorrect ? '#f0fdf4' : '#fef2f2';
+                    const questionText = (!q.text || q.text === '---') ? 'سؤال مصوّر' : q.text.substring(0, 40) + (q.text.length > 40 ? '...' : '');
+
+                    colRows += `
+                        <tr style="background:${(i - startIdx) % 2 === 0 ? '#fff' : '#f8fafc'}">
+                            <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:700;color:#4338ca;width:28px;font-size:11px">${i + 1}</td>
+                            <td style="padding:3px 6px;border:1px solid #e2e8f0;font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${questionText}</td>
+                            <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:700;width:35px;font-size:11px">${studentLabel}</td>
+                            <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:700;color:#16a34a;width:35px;font-size:11px">${correctLabel}</td>
+                            <td style="padding:3px 6px;border:1px solid #e2e8f0;text-align:center;width:30px;background:${bgColor}">
+                                <span style="font-size:14px;font-weight:900;color:${iconColor}">${icon}</span>
+                            </td>
+                        </tr>`;
+                }
+
+                multiColHTML += `
+                    <div style="flex:1;min-width:0">
+                        <table style="width:100%;border-collapse:collapse;font-family:'Tajawal',sans-serif" dir="rtl">
+                            <thead>
+                                <tr style="background:#1e3a5f;color:white">
+                                    <th style="padding:4px 6px;border:1px solid #1e3a5f;font-size:10px;width:28px">#</th>
+                                    <th style="padding:4px 6px;border:1px solid #1e3a5f;font-size:10px">السؤال</th>
+                                    <th style="padding:4px 6px;border:1px solid #1e3a5f;font-size:10px;width:35px">إجابتك</th>
+                                    <th style="padding:4px 6px;border:1px solid #1e3a5f;font-size:10px;width:35px">الصحيحة</th>
+                                    <th style="padding:4px 6px;border:1px solid #1e3a5f;font-size:10px;width:30px">النتيجة</th>
+                                </tr>
+                            </thead>
+                            <tbody>${colRows}</tbody>
+                        </table>
+                    </div>`;
+            }
+
+            const printHTML = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>شهادة نتيجة - ${result.studentName}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Aref+Ruqaa:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        @page { size: A4 portrait; margin: 8mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Tajawal', sans-serif; direction: rtl; width: 100%; max-height: 297mm; }
+        .cert-page {
+            width: 100%;
+            max-height: 277mm;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .cert-header {
+            background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 40%, #388e3c 100%);
+            color: white;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 12px 12px 0 0;
+        }
+        .cert-header h1 { font-size: 20px; font-weight: 900; }
+        .cert-header .date { font-size: 12px; opacity: 0.9; }
+        .cert-header .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .student-bar {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-top: none;
+            padding: 10px 24px;
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .student-bar .chip {
+            background: white;
+            padding: 4px 14px;
+            border-radius: 16px;
+            font-weight: 700;
+            font-size: 12px;
+            color: #1b5e20;
+            border: 1px solid #dcfce7;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .chip-label { font-weight: 500; color: #666; font-size: 10px; }
+        .stats-row {
+            display: flex;
+            gap: 10px;
+            padding: 12px 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .stat-box {
+            flex: 1;
+            min-width: 100px;
+            max-width: 160px;
+            text-align: center;
+            padding: 10px 8px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+        .stat-value { font-size: 22px; font-weight: 900; line-height: 1.2; }
+        .stat-label { font-size: 10px; color: #64748b; font-weight: 600; margin-top: 2px; }
+        .grade-box {
+            background: linear-gradient(135deg, ${gradeColor}15, ${gradeColor}08);
+            border-color: ${gradeColor}40;
+        }
+        .table-section {
+            padding: 8px 16px;
+            flex: 1;
+        }
+        .table-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #1e3a5f;
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .multi-col-tables {
+            display: flex;
+            gap: 8px;
+        }
+        .footer {
+            border-top: 2px solid #e2e8f0;
+            padding: 10px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+        }
+        .footer .teacher-section {
+            text-align: center;
+        }
+        .footer .teacher-label {
+            font-size: 9px;
+            color: #94a3b8;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .footer .teacher-name {
+            font-family: 'Aref Ruqaa', serif;
+            font-size: 22px;
+            color: #4338ca;
+            margin-top: 2px;
+        }
+        .footer .dev-credit {
+            font-size: 8px;
+            color: #cbd5e1;
+            text-align: left;
+        }
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 80px;
+            font-weight: 900;
+            color: rgba(0,0,0,0.02);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="watermark">شهادة نتيجة اختبار</div>
+    <div class="cert-page">
+        <div class="cert-header">
+            <div>
+                ${result.schoolName ? `<div style="font-size: 11px; opacity: 0.9; margin-bottom: 2px; font-weight: 700;">🏫 ${result.schoolName}</div>` : ''}
+                <h1>📋 شهادة نتيجة اختبار</h1>
+                <div class="date">التاريخ: ${examDate}</div>
+            </div>
+            <div class="badge">${grade}</div>
+        </div>
+
+        <div class="student-bar">
+            <div class="chip"><span class="chip-label">الطالب:</span> ${result.studentName}</div>
+            <div class="chip"><span class="chip-label">الصف:</span> ${result.studentClass}</div>
+            <div class="chip"><span class="chip-label">الحقل:</span> ${result.studentField}</div>
+            <div class="chip"><span class="chip-label">الشعبة:</span> ${result.studentSection}</div>
+            <div class="chip"><span class="chip-label">الاختبار:</span> ${result.examTitle}</div>
+            <div class="chip"><span class="chip-label">المادة:</span> ${result.subject}</div>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-box grade-box">
+                <div class="stat-value" style="color:${gradeColor}">${result.score} / ${result.totalScore}</div>
+                <div class="stat-label">الدرجة النهائية</div>
+            </div>
+            <div class="stat-box" style="background:#eff6ff;border-color:#bfdbfe">
+                <div class="stat-value" style="color:#2563eb">${percent}%</div>
+                <div class="stat-label">النسبة المئوية</div>
+            </div>
+            <div class="stat-box" style="background:#f0fdf4;border-color:#bbf7d0">
+                <div class="stat-value" style="color:#16a34a">${correct}</div>
+                <div class="stat-label">إجابات صحيحة ✓</div>
+            </div>
+            <div class="stat-box" style="background:#fef2f2;border-color:#fecaca">
+                <div class="stat-value" style="color:#dc2626">${wrong}</div>
+                <div class="stat-label">إجابات خاطئة ✗</div>
+            </div>
+            <div class="stat-box" style="background:#f5f3ff;border-color:#ddd6fe">
+                <div class="stat-value" style="color:#7c3aed">${result.timeSpent} د</div>
+                <div class="stat-label">الزمن المستغرق</div>
+            </div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-title">
+                <span>📝</span> تفصيل الإجابات (${totalQ} سؤال)
+            </div>
+            <div class="multi-col-tables">
+                ${multiColHTML}
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="teacher-section">
+                <div class="teacher-label">معلمـ /ي المادة</div>
+                <div class="teacher-name">${result.teacherName || '.....................'}</div>
+            </div>
+            <div class="teacher-section">
+                <div class="teacher-label">توقيع ولي الأمر</div>
+                <div class="teacher-name" style="color:#666">.......................</div>
+            </div>
+            <div class="dev-credit">
+                تم الإنشاء بواسطة منصة الاختبارات المدرسية<br>
+                تطوير: المعلم/ عيسى الرواحنة
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(printHTML);
+            printWindow.document.close();
         }
 
         function resetForNextStudent() {
@@ -1985,9 +2462,17 @@
                         <td class="p-4 text-center font-black ${percentColor}">${isIncomplete ? '-' : percent + '%'}</td>
                         <td class="p-4 text-center text-sm">${isIncomplete ? '-' : r.timeSpent + ' د'}</td>
                         <td class="p-4 text-center">
-                            <button onclick="confirmDeleteResult('${r.date}')" class="text-red-500 hover:text-red-700 p-1 transition-colors" title="حذف النتيجة">
-                                <i data-feather="trash-2" class="w-5 h-5"></i>
-                            </button>
+                            <div class="flex items-center justify-center gap-2">
+                                ${!isIncomplete && r.questions ? `<button onclick="reviewSavedAnswers('${r.date}')" class="text-indigo-500 hover:text-indigo-700 p-1 transition-colors" title="مراجعة الإجابات">
+                                    <i data-feather="eye" class="w-5 h-5"></i>
+                                </button>` : ''}
+                                ${!isIncomplete && r.questions ? `<button onclick="printStudentCertificate('${r.date}')" class="text-green-500 hover:text-green-700 p-1 transition-colors" title="طباعة شهادة النتيجة">
+                                    <i data-feather="printer" class="w-5 h-5"></i>
+                                </button>` : ''}
+                                <button onclick="confirmDeleteResult('${r.date}')" class="text-red-500 hover:text-red-700 p-1 transition-colors" title="حذف النتيجة">
+                                    <i data-feather="trash-2" class="w-5 h-5"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
